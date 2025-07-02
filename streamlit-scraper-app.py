@@ -467,7 +467,7 @@ with st.sidebar:
     page_limit = st.selectbox(
         "最大取得ページ数",
         options=['全て', 1, 2, 5, 10, 15, 20, 25, 30, 50, 100],
-        index=10  
+        index=4
     )
 
     hide_inactive = st.checkbox("現在出勤者のみを表示", value=True)
