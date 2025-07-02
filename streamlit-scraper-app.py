@@ -135,7 +135,8 @@ def get_girl_details(profile_url, session, headers):
 def run_scraper(params, progress_bar, status_text):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'}
     base_url = "https://www.cityheaven.net/"
-    prefecture_path, filter_path, debug_mode, hide_inactive, page_limit = params
+    # ▼▼▼ 変更点: debug_modeを削除 ▼▼▼
+    prefecture_path, filter_path, hide_inactive, page_limit = params
     target_path = f"{prefecture_path}/{filter_path}"
     all_girls_data = []
     with requests.Session() as session:
@@ -152,11 +153,16 @@ def run_scraper(params, progress_bar, status_text):
             if pagination_div := soup.find('div', class_='shop_nav_list'):
                 for link in pagination_div.find_all('a'):
                     if link.text.isdigit() and (page_num := int(link.text)) > last_page: last_page = page_num
-            pages_to_scrape = 1 if debug_mode else last_page
-            if page_limit: pages_to_scrape = min(pages_to_scrape, page_limit)
+            
+            # ▼▼▼ 変更点: debug_modeの条件分岐を削除 ▼▼▼
+            pages_to_scrape = last_page
+            if page_limit: 
+                pages_to_scrape = min(pages_to_scrape, page_limit)
+
             initial_girl_list = []
             for page in range(1, pages_to_scrape + 1):
                 status_text.text(f"ページ {page}/{pages_to_scrape} の基本情報を取得中...")
+                # (以降のロジックは変更なし)
                 progress_bar.progress(page / pages_to_scrape * 0.2)
                 if page > 1:
                     response = session.get(urljoin(base_url, f"{target_path}{page}/"), timeout=30, headers=headers)
@@ -469,13 +475,15 @@ with st.sidebar:
             if st.checkbox(name):
                 selected_features.append(name)
 
+    st.header("オプション")
     page_limit = st.selectbox(
         "最大取得ページ数",
-        options=['全て', 1, 2, 5, 10, 15, 20, 25, 30, 50, 100],
-        index=4
+        options=['全て', 1, 2, 3, 5, 10, 15, 20],
+        index=3
     )
-
-    hide_inactive = st.checkbox("現在出勤者のみを表示", value=True)
+    hide_inactive = st.checkbox("出勤未定者を表示しない", value=True)
+    # ▼▼▼ 変更点: デバッグモードのチェックボックスを削除 ▼▼▼
+    # debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
     start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
 
 if start_button:
@@ -483,7 +491,8 @@ if start_button:
     st.session_state.result_df = None
     selected_typ_codes = [ALL_TYPS[name] for name in selected_features]
     filter_path = f"girl-list/{'-'.join(selected_typ_codes)}/" if selected_typ_codes else "girl-list/"
-    params = (PREFECTURES[prefecture_name], filter_path, debug_mode, hide_inactive, None if page_limit == '全て' else int(page_limit))
+    # ▼▼▼ 変更点: 引数からdebug_modeを削除 ▼▼▼
+    params = (PREFECTURES[prefecture_name], filter_path, hide_inactive, None if page_limit == '全て' else int(page_limit))
     st.subheader("処理状況"); progress_bar = st.progress(0); status_text = st.empty()
     result = run_scraper(params, progress_bar, status_text)
     st.session_state.result_df = result
