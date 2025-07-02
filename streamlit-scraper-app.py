@@ -163,9 +163,12 @@ def run_scraper(params, progress_bar, status_text):
         except Exception as e:
             st.error(f"エラーが発生しました: {e}"); return pd.DataFrame()
 
+# ★★★ f-stringの問題を修正したHTML生成関数 ★★★
 def generate_html_report(df, title_text):
     if df.empty: return "<h1>データがありません</h1>"
     df_display = df.copy()
+
+    # (...中略... データ変換のコードは変更なし)
     df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer;">'
     df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
     df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
@@ -181,16 +184,19 @@ def generate_html_report(df, title_text):
     existing_columns = [col for col in desired_order if col in df_display.columns]
     df_display = df_display.reindex(columns=existing_columns)
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
-    html_template = f"""
-    <html><head><meta charset="UTF-8"><title>{title_text}</title>
+
+    # f-stringではなく、通常の文字列としてテンプレートを定義
+    html_template = """
+    <html><head><meta charset="UTF-8"><title>{title}</title>
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.1/css/jquery.dataTables.css">
     <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.js"></script>
     <style>body{{font-family:sans-serif; margin:1.5em;}} table.dataframe th,td{{padding:5px 10px;border:1px solid #ddd; text-align: left; vertical-align: middle;}} thead th{{background-color:#f0f0f0; cursor:pointer;}} .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter {{float: left; margin-right: 20px;}} .dataTables_wrapper .dataTables_info {{clear: both; padding-top: 1em;}} #custom-filters {{padding: 10px; border: 1px solid #ccc; margin-bottom: 1em; border-radius: 5px;}} .filter-container > strong {{display: block; margin-bottom: 8px;}} .filter-row {{display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px;}} .filter-row > span {{margin-right: 15px; margin-bottom: 5px;}} #custom-filters select, #custom-filters button {{padding: 4px; border: 1px solid #ccc; border-radius: 3px;}} .action-buttons {{ padding: 0 0 10px 0; }} .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}</style>
     </head>
-    <body><h1>{title_text}</h1><p>各列のヘッダーでソートできます（Shift+クリックで複数ソート可）。画像クリックで次の写真に切り替わります。</p>
+    <body><h1>{title}</h1><p>各列のヘッダーでソートできます（Shift+クリックで複数ソート可）。画像クリックで次の写真に切り替わります。</p>
     <div id="custom-filters"><div class="filter-container"><strong>カスタムフィルター</strong><div class="filter-row"><span>次回出勤: <select id="min-time"></select> ～ <select id="max-time"></select><button id="reset-time" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span><span>年齢: <select id="min-age"></select> ～ <select id="max-age"></select></span><span>ウェスト: <select id="min-waist"></select> ～ <select id="max-waist"></select></span></div><div class="filter-row"><span>口コミ数: <select id="min-reviews"></select> ～ <select id="max-reviews"></select><button id="reset-reviews" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span><span>出勤日: <select id="min-workdays"></select> ～ <select id="max-workdays"></select><button id="reset-workdays" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span></div></div></div>
-    <div class="action-buttons"><button id="filter-checked-btn">チェックしたキャストのみを表示</button><button id="show-all-btn">全てのキャストを表示</button></div>{html_table}
+    <div class="action-buttons"><button id="filter-checked-btn">チェックしたキャストのみを表示</button><button id="show-all-btn">全てのキャストを表示</button></div>
+    {table}
     <script>
     function nextImage(container) {{if (!container.dataset.images) return; const images = JSON.parse(container.dataset.images); if (images.length === 0) return; let currentIndex = parseInt(container.dataset.currentIndex, 10); currentIndex = (currentIndex + 1) % images.length; const imgTag = container.querySelector('img'); imgTag.src = images[currentIndex]; container.dataset.currentIndex = currentIndex;}}
     function setupAgeFilters() {{const ageOptions=['<option value="">指定なし</option>']; for (let i=18; i<=35; i++) {{ageOptions.push(`<option value="${{i}}">${{i}}歳</option>`);}} $('#min-age, #max-age').html(ageOptions.join(''));}}
@@ -228,7 +234,8 @@ def generate_html_report(df, title_text):
     }});
     </script></body></html>
     """
-    return html_template
+    # .format() を使って変数を埋め込む
+    return html_template.format(title=title_text, table=html_table)
 
 
 # --- Streamlit UI ---
