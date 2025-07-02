@@ -124,7 +124,7 @@ def get_girl_details(profile_url, session, headers):
     if girl_id_match and (shop_id_match := re.search(r'/(\d+)/girlid-', profile_url)):
         girl_id = girl_id_match.group(1)
         shop_id = shop_id_match.group(1)
-        for i in range(20): # 最大20枚まで試行
+        for i in range(50): # 最大50枚まで試行
             # サイトのURL構造に合わせたフォーマット
             image_url = f"https://img2.cityheaven.net/img/girls/tt/{shop_id}/grpb00{girl_id}_{i:010d}pc.jpg"
             try:
