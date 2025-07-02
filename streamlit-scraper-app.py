@@ -280,7 +280,7 @@ def generate_html_report(df, title_text):
                         <button id="reset-time" type="button">リセット</button>
                     </span>
                     <span>
-                        年齢: <select id="min-age"></select> ～ <select id="max-age"></select>
+                        年　齢: <select id="min-age"></select> ～ <select id="max-age"></select>
                         <button id="reset-age" type="button">リセット</button>
                     </span>
                     <span>
