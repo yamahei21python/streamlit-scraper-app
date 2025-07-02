@@ -477,7 +477,6 @@ with st.sidebar:
 
     hide_inactive = st.checkbox("現在出勤者のみを表示", value=True)
     start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
-    debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
 
 if start_button:
     st.session_state.is_running = True
