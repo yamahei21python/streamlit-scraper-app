@@ -185,20 +185,61 @@ def generate_html_report(df, title_text):
     df_display = df_display.reindex(columns=existing_columns)
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
-    # f-stringではなく、通常の文字列としてテンプレートを定義
-    html_template = """
-    <html><head><meta charset="UTF-8"><title>{title}</title>
+def generate_html_report(df, title_text):
+    if df.empty: return "<h1>データがありません</h1>"
+    df_display = df.copy()
+    df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer;">'
+    df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
+    df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
+    df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
+    num_cols = ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数', '週合計勤務時間']
+    for col in num_cols:
+        if col in df_display.columns:
+            df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else ("{:.1f}".format(x) if pd.notna(x) and x > 0 else ""))
+    df_display.fillna("", inplace=True)
+    rename_map = {"身長(cm)": "身長", "バスト(cm)": "バスト", "ウェスト(cm)": "ウェスト", "ヒップ(cm)": "ヒップ", "週合計出勤日数": "出勤日", "週合計勤務時間": "勤務時間", "店舗名": "店舗"}
+    df_display.rename(columns=rename_map, inplace=True)
+    desired_order = ["チェック", "名前", "ギャラリー", "年齢", "身長", "カップ", "WEB人気", "口コミ数", "出勤日", "勤務時間", "出勤状況", "本日の出勤予定", "次回出勤", "バスト", "ウェスト", "ヒップ", "店舗"]
+    existing_columns = [col for col in desired_order if col in df_display.columns]
+    df_display = df_display.reindex(columns=existing_columns)
+    html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
+
+    # f-stringを使い、JavaScript内の { } は {{ }} と２つ重ねてエスケープする
+    html_template = f"""
+    <html><head><meta charset="UTF-8"><title>{title_text}</title>
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.1/css/jquery.dataTables.css">
     <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.js"></script>
-    <style>body{{font-family:sans-serif; margin:1.5em;}} table.dataframe th,td{{padding:5px 10px;border:1px solid #ddd; text-align: left; vertical-align: middle;}} thead th{{background-color:#f0f0f0; cursor:pointer;}} .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter {{float: left; margin-right: 20px;}} .dataTables_wrapper .dataTables_info {{clear: both; padding-top: 1em;}} #custom-filters {{padding: 10px; border: 1px solid #ccc; margin-bottom: 1em; border-radius: 5px;}} .filter-container > strong {{display: block; margin-bottom: 8px;}} .filter-row {{display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px;}} .filter-row > span {{margin-right: 15px; margin-bottom: 5px;}} #custom-filters select, #custom-filters button {{padding: 4px; border: 1px solid #ccc; border-radius: 3px;}} .action-buttons {{ padding: 0 0 10px 0; }} .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}</style>
+    <style>
+        body {{font-family:sans-serif; margin:1.5em;}}
+        table.dataframe th,td {{padding:5px 10px;border:1px solid #ddd; text-align: left; vertical-align: middle;}}
+        thead th {{background-color:#f0f0f0; cursor:pointer;}}
+        .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter {{float: left; margin-right: 20px;}}
+        .dataTables_wrapper .dataTables_info {{clear: both; padding-top: 1em;}}
+        #custom-filters {{padding: 10px; border: 1px solid #ccc; margin-bottom: 1em; border-radius: 5px;}}
+        .filter-container > strong {{display: block; margin-bottom: 8px;}}
+        .filter-row {{display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px;}}
+        .filter-row > span {{margin-right: 15px; margin-bottom: 5px;}}
+        #custom-filters select, #custom-filters button {{padding: 4px; border: 1px solid #ccc; border-radius: 3px;}}
+        .action-buttons {{ padding: 0 0 10px 0; }}
+        .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}
+    </style>
     </head>
-    <body><h1>{title}</h1><p>各列のヘッダーでソートできます（Shift+クリックで複数ソート可）。画像クリックで次の写真に切り替わります。</p>
+    <body><h1>{title_text}</h1><p>各列のヘッダーでソートできます（Shift+クリックで複数ソート可）。画像クリックで次の写真に切り替わります。</p>
     <div id="custom-filters"><div class="filter-container"><strong>カスタムフィルター</strong><div class="filter-row"><span>次回出勤: <select id="min-time"></select> ～ <select id="max-time"></select><button id="reset-time" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span><span>年齢: <select id="min-age"></select> ～ <select id="max-age"></select></span><span>ウェスト: <select id="min-waist"></select> ～ <select id="max-waist"></select></span></div><div class="filter-row"><span>口コミ数: <select id="min-reviews"></select> ～ <select id="max-reviews"></select><button id="reset-reviews" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span><span>出勤日: <select id="min-workdays"></select> ～ <select id="max-workdays"></select><button id="reset-workdays" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button></span></div></div></div>
     <div class="action-buttons"><button id="filter-checked-btn">チェックしたキャストのみを表示</button><button id="show-all-btn">全てのキャストを表示</button></div>
-    {table}
+    {html_table}
     <script>
-    function nextImage(container) {{if (!container.dataset.images) return; const images = JSON.parse(container.dataset.images); if (images.length === 0) return; let currentIndex = parseInt(container.dataset.currentIndex, 10); currentIndex = (currentIndex + 1) % images.length; const imgTag = container.querySelector('img'); imgTag.src = images[currentIndex]; container.dataset.currentIndex = currentIndex;}}
+    function nextImage(container) {{
+        if (!container.dataset.images) return;
+        const images = JSON.parse(container.dataset.images);
+        if (images.length === 0) return;
+        let currentIndex = parseInt(container.dataset.currentIndex, 10);
+        currentIndex = (currentIndex + 1) % images.length;
+        const imgTag = container.querySelector('img');
+        imgTag.src = images[currentIndex];
+        container.dataset.currentIndex = currentIndex;
+    }}
     function setupAgeFilters() {{const ageOptions=['<option value="">指定なし</option>']; for (let i=18; i<=35; i++) {{ageOptions.push(`<option value="${{i}}">${{i}}歳</option>`);}} $('#min-age, #max-age').html(ageOptions.join(''));}}
     function setupTimeFilters() {{const timeOptions=['<option value="">指定なし</option>']; const hourSequence=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5]; for (const i of hourSequence) {{const hour=i.toString().padStart(2,'0'); timeOptions.push(`<option value="${{hour}}:00">${{hour}}:00</option>`);}} $('#min-time, #max-time').html(timeOptions.join(''));}}
     function setupWaistFilters() {{const waistOptions=['<option value="">指定なし</option>']; for (let i=45; i<=80; i++) {{waistOptions.push(`<option value="${{i}}">${{i}}</option>`);}} $('#min-waist, #max-waist').html(waistOptions.join(''));}}
@@ -213,12 +254,12 @@ def generate_html_report(df, title_text):
             var minWaist=parseInt($('#min-waist').val(),10); var maxWaist=parseInt($('#max-waist').val(),10); var cellWaist=parseInt(data[waistColIdx],10);
             var minReviews=parseInt($('#min-reviews').val(),10); var maxReviews=parseInt($('#max-reviews').val(),10); var cellReviews=parseInt(data[reviewColIdx],10);
             var minWorkdays=parseInt($('#min-workdays').val(),10); var maxWorkdays=parseInt($('#max-workdays').val(),10); var cellWorkdays=parseInt(data[workdayColIdx],10);
-            if((!isNaN(minAge)&&(isNaN(cellAge)||cellAge<minAge))||(!isNaN(maxAge)&&(isNaN(cellAge)||cellAge>maxAge))) return false;
+            if((!isNaN(minAge)&&(isNaN(cellAge)||cellAge<minAge))||(!isNaN(maxAge)&&(isNaN(cellAge)||cellAge>maxAge))) {{return false;}}
             if(minTime&&maxTime&&minTime>maxTime){{if(cellTime<minTime&&cellTime>maxTime)return false;}}else{{if((minTime&&cellTime<minTime)||(maxTime&&cellTime>maxTime))return false;}}
-            if((!isNaN(minWaist)&&(isNaN(cellWaist)||cellWaist<minWaist))||(!isNaN(maxWaist)&&(isNaN(cellWaist)||cellWaist>maxWaist))) return false;
-            if((!isNaN(minReviews)&&(isNaN(cellReviews)||cellReviews<minReviews))||(!isNaN(maxReviews)&&(isNaN(cellReviews)||cellReviews>maxReviews))) return false;
-            if((!isNaN(minWorkdays)&&(isNaN(cellWorkdays)||cellWorkdays<minWorkdays))||(!isNaN(maxWorkdays)&&(isNaN(cellWorkdays)||cellWorkdays>maxWorkdays))) return false;
-            if(isCheckedFilterActive){{var rowNode=table.row(dataIndex).node(); var isChecked=$(rowNode).find('.row-checkbox').is(':checked'); if(!isChecked)return false;}}
+            if((!isNaN(minWaist)&&(isNaN(cellWaist)||cellWaist<minWaist))||(!isNaN(maxWaist)&&(isNaN(cellWaist)||cellWaist>maxWaist))) {{return false;}}
+            if((!isNaN(minReviews)&&(isNaN(cellReviews)||cellReviews<minReviews))||(!isNaN(maxReviews)&&(isNaN(cellReviews)||cellReviews>maxReviews))) {{return false;}}
+            if((!isNaN(minWorkdays)&&(isNaN(cellWorkdays)||cellWorkdays<minWorkdays))||(!isNaN(maxWorkdays)&&(isNaN(cellWorkdays)||cellWorkdays>maxWorkdays))) {{return false;}}
+            if(isCheckedFilterActive){{var rowNode=table.row(dataIndex).node(); var isChecked=$(rowNode).find('.row-checkbox').is(':checked'); if(!isChecked){{return false;}}}}
             return true;
         }});
         var table=$('#resultsTable').DataTable({{"pageLength":-1, "lengthMenu":[[10,25,50,100,-1],[10,25,50,100,"全て"]], "order":[], "dom":'<"top"lfi>rt<"bottom"p><"clear">'});
@@ -234,8 +275,7 @@ def generate_html_report(df, title_text):
     }});
     </script></body></html>
     """
-    # .format() を使って変数を埋め込む
-    return html_template.format(title=title_text, table=html_table)
+    return html_template
 
 
 # --- Streamlit UI ---
