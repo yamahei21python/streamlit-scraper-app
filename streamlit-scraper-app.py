@@ -217,11 +217,15 @@ def generate_html_report(df, title_text):
     df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
     df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
     
-    for col in ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数']:
+    # ▼▼▼ 変更点: '週合計勤務時間'を整数表示の対象に追加 ▼▼▼
+    int_format_cols = [
+        '年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', 
+        '口コミ数', '週合計出勤日数', '週合計勤務時間'
+    ]
+    for col in int_format_cols:
         if col in df_display.columns:
             df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "")
-    if '週合計勤務時間' in df_display.columns:
-        df_display['週合計勤務時間'] = df_display['週合計勤務時間'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "")
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
     df_display.fillna("", inplace=True)
     
@@ -242,7 +246,7 @@ def generate_html_report(df, title_text):
 
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
-    # --- HTMLテンプレート本体 ---
+    # (HTMLテンプレート部分は変更なし)
     html_template = f"""
     <html>
     <head>
@@ -392,7 +396,6 @@ def generate_html_report(df, title_text):
             setupAgeFilters(); setupTimeFilters(); setupWaistFilters();
             setupReviewFilters(); setupWorkdayFilters();
             
-            // ▼▼▼ 変更点: デフォルト値を設定する関数を追加 ▼▼▼
             function setDefaultFiltersAndDraw() {{
                 $('#min-age').val('18');
                 $('#max-age').val('29');
@@ -405,10 +408,10 @@ def generate_html_report(df, title_text):
                 $('#min-time').val(formattedStart);
                 $('#max-time').val('05:00');
                 
-                table.draw(); // フィルターを適用
+                table.draw();
             }}
 
-            setDefaultFiltersAndDraw(); // ページ読み込み時にデフォルト値を設定
+            setDefaultFiltersAndDraw();
 
             const allFilters = '#min-age, #max-age, #min-time, #max-time, #min-waist, #max-waist, #min-reviews, #max-reviews, #min-workdays, #max-workdays';
             $(allFilters).on('change', () => table.draw());
@@ -496,7 +499,11 @@ if st.session_state.result_df is not None:
             st.components.v1.html(html_report, height=800, scrolling=True)
         with tab2:
             st.dataframe(st.session_state.result_df, column_config={"ギャラリーURL": st.column_config.ImageColumn("Photo"), "プロフィールリンク": st.column_config.LinkColumn("Profile Link")}, use_container_width=True)
-        csv = st.session_state.result_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label="結果をCSVでダウンロード", data=csv, file_name=f"heaven_data_{prefecture_name}_{int(time.time())}.csv", mime="text/csv")
+        st.download_button(
+            label="HTMLレポートをダウンロード",
+            data=html_report.encode('utf-8-sig'),  # UTF-8 with BOMでエンコード
+            file_name=f"report_{prefecture_name}_{int(time.time())}.html",
+            mime="text/html"
+        )
     else:
         st.warning("条件に合うデータが見つかりませんでした。")
