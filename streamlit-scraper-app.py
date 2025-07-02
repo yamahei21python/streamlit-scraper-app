@@ -211,51 +211,75 @@ def generate_html_report(df, title_text):
 
     df_display = df.copy()
 
-    # 表示用にデータを変換
+    # --- 表示用にデータを変換 ---
+    df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer; transform: scale(1.5);">'
     df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
     df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
     df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
-
-    for col in ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数']:
+    
+    # 数値列を整数または小数点以下1桁の文字列に変換
+    for col in ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数']:
         if col in df_display.columns:
             df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "")
-    
+    if '週合計勤務時間' in df_display.columns:
+        df_display['週合計勤務時間'] = df_display['週合計勤務時間'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "")
+            
     df_display.fillna("", inplace=True)
     
-    # 列の順番と名前を定義
-    rename_map = {"身長(cm)": "身長", "バスト(cm)": "バスト", "ウェスト(cm)": "ウェスト", "ヒップ(cm)": "ヒップ"}
+    # --- 列の順番と名前を定義 ---
+    rename_map = {
+        "身長(cm)": "身長", "バスト(cm)": "バスト", "ウェスト(cm)": "ウェスト", 
+        "ヒップ(cm)": "ヒップ", "週合計出勤日数": "出勤日", "週合計勤務時間": "勤務時間", "店舗名": "店舗"
+    }
     df_display.rename(columns=rename_map, inplace=True)
     
-    desired_order = ["名前", "ギャラリー", "年齢", "身長", "カップ", "WEB人気", "口コミ数", "出勤状況", "本日の出勤予定", "次回出勤", "バスト", "ウェスト", "ヒップ", "店舗名"]
+    desired_order = [
+        "チェック", "名前", "ギャラリー", "年齢", "身長", "カップ", "WEB人気", 
+        "口コミ数", "出勤日", "勤務時間", "出勤状況", "本日の出勤予定", 
+        "次回出勤", "バスト", "ウェスト", "ヒップ", "店舗"
+    ]
     existing_columns = [col for col in desired_order if col in df_display.columns]
     df_display = df_display[existing_columns]
 
-    # HTMLテーブルの生成
+    # --- HTMLテーブルの生成 ---
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
-    # 元のスクリプトのHTMLテンプレートをここに記述
-    # (JavaScriptの列番号は手動で調整済み)
+    # --- HTMLテンプレート本体 ---
+    # f-string内で {} を使うため、JavaScriptコードの {} は {{}} のように二重にしてエスケープしています。
     html_template = f"""
-    <html><head><meta charset="UTF-8"><title>{title_text}</title>
-    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.1/css/jquery.dataTables.css">
-    <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.js"></script>
-    <style>
-        body{{font-family:sans-serif; margin:1.5em;}} table.dataframe th,td{{padding:5px 10px;border:1px solid #ddd; text-align: left; vertical-align: middle;}}
-        thead th{{background-color:#f0f0f0; cursor:pointer;}} .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter {{float: left; margin-right: 20px;}}
-        .dataTables_wrapper .dataTables_info {{clear: both; padding-top: 1em;}} #custom-filters {{padding: 10px; border: 1px solid #ccc; margin-bottom: 1em; border-radius: 5px;}}
-    </style>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{title_text}</title>
+        <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.1/css/jquery.dataTables.css">
+        <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.js"></script>
+        <style>
+            body {{ font-family: sans-serif; margin: 1.5em; }}
+            table.dataframe th, td {{ padding: 5px 10px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }}
+            thead th {{ background-color: #f0f0f0; cursor: pointer; }}
+            .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter {{ float: left; margin-right: 20px; }}
+            .dataTables_wrapper .dataTables_info {{ clear: both; padding-top: 1em; }}
+            #custom-filters {{ padding: 10px; border: 1px solid #ccc; margin-bottom: 1em; border-radius: 5px; }}
+            .filter-container > strong {{ display: block; margin-bottom: 8px; }}
+            .filter-row {{ display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }}
+            .filter-row > span {{ margin-right: 15px; margin-bottom: 5px; }}
+            #custom-filters select, #custom-filters button {{ padding: 4px; border: 1px solid #ccc; border-radius: 3px; }}
+            .action-buttons {{ padding: 0 0 10px 0; }}
+            .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}
+        </style>
     </head>
     <body>
         <h1>{title_text}</h1>
         <p>各列のヘッダーでソートできます。画像クリックで次の写真に切り替わります。</p>
+        
         <div id="custom-filters">
             <div class="filter-container">
                 <strong>カスタムフィルター</strong>
                 <div class="filter-row">
                     <span>
                         次回出勤: <select id="min-time"></select> ～ <select id="max-time"></select>
-                        <button id="reset-time" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                        <button id="reset-time" type="button">リセット</button>
                     </span>
                     <span>
                         年齢: <select id="min-age"></select> ～ <select id="max-age"></select>
@@ -267,16 +291,23 @@ def generate_html_report(df, title_text):
                 <div class="filter-row">
                     <span>
                         口コミ数: <select id="min-reviews"></select> ～ <select id="max-reviews"></select>
-                        <button id="reset-reviews" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                        <button id="reset-reviews" type="button">リセット</button>
                     </span>
                     <span>
                         出勤日: <select id="min-workdays"></select> ～ <select id="max-workdays"></select>
-                        <button id="reset-workdays" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                        <button id="reset-workdays" type="button">リセット</button>
                     </span>
                 </div>
             </div>
         </div>
+
+        <div class="action-buttons">
+            <button id="filter-checked-btn">チェックしたキャストのみを表示</button>
+            <button id="show-all-btn">全てのキャストを表示</button>
+        </div>
+
         {html_table}
+
         <script>
         function nextImage(container) {{
             if (!container.dataset.images) return;
@@ -287,34 +318,111 @@ def generate_html_report(df, title_text):
             container.querySelector('img').src = images[currentIndex];
             container.dataset.currentIndex = currentIndex;
         }}
-        $(document).ready(function(){{
+
+        function setupSelectOptions(selector, options) {{ $(selector).html(options.join('')); }}
+        function setupAgeFilters() {{
+            const opts = ['<option value="">指定なし</option>'];
+            for (let i = 18; i <= 40; i++) opts.push(`<option value="${{i}}">${{i}}歳</option>`);
+            setupSelectOptions('#min-age, #max-age', opts);
+        }}
+        function setupTimeFilters() {{
+            const opts = ['<option value="">指定なし</option>'];
+            const hourSeq = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5];
+            for (const i of hourSeq) {{
+                const h = i.toString().padStart(2, '0');
+                opts.push(`<option value="${{h}}:00">${{h}}:00</option>`);
+            }}
+            setupSelectOptions('#min-time, #max-time', opts);
+        }}
+        function setupWaistFilters() {{
+            const opts = ['<option value="">指定なし</option>'];
+            for (let i = 45; i <= 80; i++) opts.push(`<option value="${{i}}">${{i}}</option>`);
+            setupSelectOptions('#min-waist, #max-waist', opts);
+        }}
+        function setupReviewFilters() {{
+            const opts = ['<option value="">指定なし</option>'];
+            [1, 2, 3, 5, 10, 20, 30, 50, 100].forEach(v => opts.push(`<option value="${{v}}">${{v}}</option>`));
+            setupSelectOptions('#min-reviews, #max-reviews', opts);
+        }}
+        function setupWorkdayFilters() {{
+            const opts = ['<option value="">指定なし</option>'];
+            for (let i = 0; i <= 7; i++) opts.push(`<option value="${{i}}">${{i}}</option>`);
+            setupSelectOptions('#min-workdays, #max-workdays', opts);
+        }}
+
+        $(document).ready(function() {{
+            let isCheckedFilterActive = false;
+
             $.fn.dataTable.ext.search.push(
                 function(settings, data, dataIndex) {{
-                    const ageColIdx = 2; const timeColIdx = 9;
-                    var minAge = parseInt($('#min-age').val(), 10); var maxAge = parseInt($('#max-age').val(), 10);
-                    var cellAge = parseInt(data[ageColIdx], 10);
-                    if ((!isNaN(minAge) && (isNaN(cellAge) || cellAge < minAge)) || (!isNaN(maxAge) && (isNaN(cellAge) || cellAge > maxAge))) return false;
-                    var minTime = $('#min-time').val(); var maxTime = $('#max-time').val();
-                    var cellTime = data[timeColIdx] || "";
-                    if (minTime && maxTime && minTime > maxTime) {{ if (cellTime < minTime && cellTime > maxTime) return false; }}
-                    else {{ if ((minTime && cellTime < minTime) || (maxTime && cellTime > maxTime)) return false; }}
+                    // ▼▼▼ Pythonの列順序に合わせてインデックスを修正済み ▼▼▼
+                    const ageColIdx = 3;
+                    const reviewColIdx = 7;
+                    const workdayColIdx = 8;
+                    const timeColIdx = 12; 
+                    const waistColIdx = 14;
+                    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+                    // チェックボックスによる絞り込み
+                    if (isCheckedFilterActive) {{
+                        var rowNode = table.row(dataIndex).node();
+                        if (!$(rowNode).find('.row-checkbox').is(':checked')) return false;
+                    }}
+                    
+                    const getVal = (id) => parseInt($(id).val(), 10);
+                    const minAge = getVal('#min-age'), maxAge = getVal('#max-age');
+                    const minWaist = getVal('#min-waist'), maxWaist = getVal('#max-waist');
+                    const minReviews = getVal('#min-reviews'), maxReviews = getVal('#max-reviews');
+                    const minWorkdays = getVal('#min-workdays'), maxWorkdays = getVal('#max-workdays');
+                    
+                    const cellAge = parseInt(data[ageColIdx]) || 0;
+                    const cellWaist = parseInt(data[waistColIdx]) || 0;
+                    const cellReviews = parseInt(data[reviewColIdx]) || 0;
+                    const cellWorkdays = parseInt(data[workdayColIdx]) || 0;
+                    const cellTime = data[timeColIdx] || "";
+                    const minTime = $('#min-time').val(), maxTime = $('#max-time').val();
+
+                    if ((!isNaN(minAge) && cellAge < minAge) || (!isNaN(maxAge) && cellAge > maxAge)) return false;
+                    if ((!isNaN(minWaist) && cellWaist < minWaist) || (!isNaN(maxWaist) && cellWaist > maxWaist)) return false;
+                    if ((!isNaN(minReviews) && cellReviews < minReviews) || (!isNaN(maxReviews) && cellReviews > maxReviews)) return false;
+                    if ((!isNaN(minWorkdays) && cellWorkdays < minWorkdays) || (!isNaN(maxWorkdays) && cellWorkdays > maxWorkdays)) return false;
+                    
+                    if (minTime && maxTime && minTime > maxTime) {{
+                        if (cellTime < minTime && cellTime > maxTime) return false;
+                    }} else {{
+                        if ((minTime && cellTime < minTime) || (maxTime && cellTime > maxTime)) return false;
+                    }}
+
                     return true;
                 }}
             );
-            var table = $('#resultsTable').DataTable({{"pageLength": 50,"lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "全て"]]}});
-            
-            // Age filter setup
-            const ageOptions = ['<option value="">指定なし</option>']; for (let i = 18; i <= 40; i++) ageOptions.push(`<option value="${{i}}">${{i}}歳</option>`);
-            $('#min-age, #max-age').html(ageOptions.join(''));
-            // Time filter setup
-            const timeOptions = ['<option value="">指定なし</option>']; const hourSequence = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5];
-            for (const i of hourSequence) {{ const hour = i.toString().padStart(2, '0'); timeOptions.push(`<option value="${{hour}}:00">${{hour}}:00</option>`); }}
-            $('#min-time, #max-time').html(timeOptions.join(''));
 
-            $('#min-age, #max-age, #min-time, #max-time').on('change', function() {{ table.draw(); }});
+            var table = $('#resultsTable').DataTable({{ 
+                "pageLength": 50,
+                "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "全て"]],
+                "order": [],
+                "dom": '<"top"lfi>rt<"bottom"p><"clear">'
+            }});
+
+            setupAgeFilters();
+            setupTimeFilters();
+            setupWaistFilters();
+            setupReviewFilters();
+            setupWorkdayFilters();
+            
+            const allFilters = '#min-age, #max-age, #min-time, #max-time, #min-waist, #max-waist, #min-reviews, #max-reviews, #min-workdays, #max-workdays';
+            $(allFilters).on('change', () => table.draw());
+
+            $('#reset-time').on('click', () => {{ $('#min-time, #max-time').val(''); table.draw(); }});
+            $('#reset-reviews').on('click', () => {{ $('#min-reviews, #max-reviews').val(''); table.draw(); }});
+            $('#reset-workdays').on('click', () => {{ $('#min-workdays, #max-workdays').val(''); table.draw(); }});
+
+            $('#filter-checked-btn').on('click', () => {{ isCheckedFilterActive = true; table.draw(); }});
+            $('#show-all-btn').on('click', () => {{ isCheckedFilterActive = false; table.draw(); }});
         }});
         </script>
-    </body></html>
+    </body>
+    </html>
     """
     return html_template
 
