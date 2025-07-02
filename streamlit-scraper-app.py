@@ -217,7 +217,6 @@ def generate_html_report(df, title_text):
     df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
     df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
     
-    # 数値列を整数または小数点以下1桁の文字列に変換
     for col in ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数']:
         if col in df_display.columns:
             df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "")
@@ -241,11 +240,9 @@ def generate_html_report(df, title_text):
     existing_columns = [col for col in desired_order if col in df_display.columns]
     df_display = df_display[existing_columns]
 
-    # --- HTMLテーブルの生成 ---
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
     # --- HTMLテンプレート本体 ---
-    # f-string内で {} を使うため、JavaScriptコードの {} は {{}} のように二重にしてエスケープしています。
     html_template = f"""
     <html>
     <head>
@@ -264,7 +261,8 @@ def generate_html_report(df, title_text):
             .filter-container > strong {{ display: block; margin-bottom: 8px; }}
             .filter-row {{ display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }}
             .filter-row > span {{ margin-right: 15px; margin-bottom: 5px; }}
-            #custom-filters select, #custom-filters button {{ padding: 4px; border: 1px solid #ccc; border-radius: 3px; }}
+            /* ▼▼▼ 変更点: ボタンにスタイルを追加 ▼▼▼ */
+            #custom-filters button {{ margin-left: 5px; cursor: pointer; }}
             .action-buttons {{ padding: 0 0 10px 0; }}
             .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}
         </style>
@@ -283,9 +281,11 @@ def generate_html_report(df, title_text):
                     </span>
                     <span>
                         年齢: <select id="min-age"></select> ～ <select id="max-age"></select>
+                        <button id="reset-age" type="button">リセット</button>
                     </span>
                     <span>
                         ウェスト: <select id="min-waist"></select> ～ <select id="max-waist"></select>
+                        <button id="reset-waist" type="button">リセット</button>
                     </span>
                 </div>
                 <div class="filter-row">
@@ -355,15 +355,8 @@ def generate_html_report(df, title_text):
 
             $.fn.dataTable.ext.search.push(
                 function(settings, data, dataIndex) {{
-                    // ▼▼▼ Pythonの列順序に合わせてインデックスを修正済み ▼▼▼
-                    const ageColIdx = 3;
-                    const reviewColIdx = 7;
-                    const workdayColIdx = 8;
-                    const timeColIdx = 12; 
-                    const waistColIdx = 14;
-                    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                    const ageColIdx = 3, reviewColIdx = 7, workdayColIdx = 8, timeColIdx = 12, waistColIdx = 14;
 
-                    // チェックボックスによる絞り込み
                     if (isCheckedFilterActive) {{
                         var rowNode = table.row(dataIndex).node();
                         if (!$(rowNode).find('.row-checkbox').is(':checked')) return false;
@@ -392,7 +385,6 @@ def generate_html_report(df, title_text):
                     }} else {{
                         if ((minTime && cellTime < minTime) || (maxTime && cellTime > maxTime)) return false;
                     }}
-
                     return true;
                 }}
             );
@@ -400,20 +392,19 @@ def generate_html_report(df, title_text):
             var table = $('#resultsTable').DataTable({{ 
                 "pageLength": 50,
                 "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "全て"]],
-                "order": [],
-                "dom": '<"top"lfi>rt<"bottom"p><"clear">'
+                "order": [], "dom": '<"top"lfi>rt<"bottom"p><"clear">'
             }});
 
-            setupAgeFilters();
-            setupTimeFilters();
-            setupWaistFilters();
-            setupReviewFilters();
-            setupWorkdayFilters();
+            setupAgeFilters(); setupTimeFilters(); setupWaistFilters();
+            setupReviewFilters(); setupWorkdayFilters();
             
             const allFilters = '#min-age, #max-age, #min-time, #max-time, #min-waist, #max-waist, #min-reviews, #max-reviews, #min-workdays, #max-workdays';
             $(allFilters).on('change', () => table.draw());
 
+            // ▼▼▼ 変更点: 年齢とウェストのリセット処理を追加 ▼▼▼
             $('#reset-time').on('click', () => {{ $('#min-time, #max-time').val(''); table.draw(); }});
+            $('#reset-age').on('click', () => {{ $('#min-age, #max-age').val(''); table.draw(); }});
+            $('#reset-waist').on('click', () => {{ $('#min-waist, #max-waist').val(''); table.draw(); }});
             $('#reset-reviews').on('click', () => {{ $('#min-reviews, #max-reviews').val(''); table.draw(); }});
             $('#reset-workdays').on('click', () => {{ $('#min-workdays, #max-workdays').val(''); table.draw(); }});
 
