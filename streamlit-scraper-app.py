@@ -464,11 +464,15 @@ with st.sidebar:
             if st.checkbox(name):
                 selected_features.append(name)
 
-    st.header("オプション")
-    page_limit = st.select_slider("最大取得ページ数", options=['全て', 1, 2, 3, 5, 10, 15, 20], value=3)
-    hide_inactive = st.checkbox("出勤未定者を表示しない", value=True)
-    debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
+    page_limit = st.selectbox(
+        "最大取得ページ数",
+        options=['全て', 1, 2, 5, 10, 15, 20, 25, 30, 50, 100],
+        index=10  
+    )
+
+    hide_inactive = st.checkbox("現在出勤者のみを表示", value=True)
     start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
+    debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
 
 if start_button:
     st.session_state.is_running = True
