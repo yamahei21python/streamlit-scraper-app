@@ -481,7 +481,7 @@ with st.sidebar:
         index=4
     )
     
-    hide_inactive = st.checkbox("出勤未定者を表示しない", value=True)
+    hide_inactive = st.checkbox("本日出勤者のみを表示", value=True)
     # ▼▼▼ 変更点: デバッグモードのチェックボックスを削除 ▼▼▼
     # debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
     start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
