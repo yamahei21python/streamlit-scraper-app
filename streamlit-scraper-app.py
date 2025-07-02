@@ -135,7 +135,6 @@ def get_girl_details(profile_url, session, headers):
 def run_scraper(params, progress_bar, status_text):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'}
     base_url = "https://www.cityheaven.net/"
-    # ▼▼▼ 変更点: debug_modeを削除 ▼▼▼
     prefecture_path, filter_path, hide_inactive, page_limit = params
     target_path = f"{prefecture_path}/{filter_path}"
     all_girls_data = []
@@ -153,8 +152,6 @@ def run_scraper(params, progress_bar, status_text):
             if pagination_div := soup.find('div', class_='shop_nav_list'):
                 for link in pagination_div.find_all('a'):
                     if link.text.isdigit() and (page_num := int(link.text)) > last_page: last_page = page_num
-            
-            # ▼▼▼ 変更点: debug_modeの条件分岐を削除 ▼▼▼
             pages_to_scrape = last_page
             if page_limit: 
                 pages_to_scrape = min(pages_to_scrape, page_limit)
@@ -162,7 +159,6 @@ def run_scraper(params, progress_bar, status_text):
             initial_girl_list = []
             for page in range(1, pages_to_scrape + 1):
                 status_text.text(f"ページ {page}/{pages_to_scrape} の基本情報を取得中...")
-                # (以降のロジックは変更なし)
                 progress_bar.progress(page / pages_to_scrape * 0.2)
                 if page > 1:
                     response = session.get(urljoin(base_url, f"{target_path}{page}/"), timeout=30, headers=headers)
@@ -174,10 +170,18 @@ def run_scraper(params, progress_bar, status_text):
                     data = {"名前": n.text.strip() if (n := item.find('p', 'girlname').find('a')) else "NoName", "年齢": parse_age(a.text.strip() if (a := item.find('p', 'girlname').find('span')) else ''), "出勤状況": status, "次回出勤": parse_sortable_time(status), **parse_style(s.text.strip() if (s := item.find('p', 'girlstyle')) else ''), "プロフィールリンク": profile_link, "店舗名": (s.text.strip() if (s := item.find('p', 'shopname').find('a')) else None)}
                     initial_girl_list.append(data)
                 time.sleep(0.5)
-            status_text.text(f"全{len(initial_girl_list)}人の詳細情報を並列取得中...")
+
+            # ▼▼▼ ここからが修正箇所 ▼▼▼
+            total_people = len(initial_girl_list)
+            status_text.text(f"全{total_people}人の詳細情報を並列取得中...")
+            
+            # 詳細情報取得の開始時間を記録
+            start_time_details = time.time()
+            
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 future_to_data = {executor.submit(get_girl_details, data['プロフィールリンク'], session, headers): data for data in initial_girl_list}
                 progress_count = 0
+                
                 for future in concurrent.futures.as_completed(future_to_data):
                     original_data = future_to_data[future]
                     try:
@@ -185,9 +189,35 @@ def run_scraper(params, progress_bar, status_text):
                         original_data.update(details)
                         if original_data["次回出勤"] is None: original_data["次回出勤"] = details.get("次回出勤")
                         all_girls_data.append(original_data)
-                    except Exception: pass
+                    except Exception: 
+                        pass
+                    
                     progress_count += 1
-                    progress_bar.progress(0.2 + (progress_count / len(initial_girl_list) * 0.8))
+                    
+                    # --- 残り時間の計算と表示 ---
+                    # 最初の数件は計算が安定しないため、5件目以降から表示
+                    if progress_count > 5:
+                        elapsed_time = time.time() - start_time_details
+                        avg_time_per_person = elapsed_time / progress_count
+                        remaining_people = total_people - progress_count
+                        remaining_seconds = int(avg_time_per_person * remaining_people)
+                        
+                        if remaining_seconds > 0:
+                            remaining_minutes = remaining_seconds // 60
+                            remaining_seconds_part = remaining_seconds % 60
+                            time_estimate_str = f" - 残り約{remaining_minutes}分{remaining_seconds_part}秒"
+                        else:
+                            time_estimate_str = ""
+                        
+                        # ステータステキストを更新
+                        status_text.text(f"全{total_people}人の詳細情報を並列取得中... ({progress_count}/{total_people}){time_estimate_str}")
+                    else:
+                        # 最初の5件までは進捗のみ表示
+                        status_text.text(f"全{total_people}人の詳細情報を並列取得中... ({progress_count}/{total_people})")
+
+                    # プログレスバーを更新
+                    progress_bar.progress(0.2 + (progress_count / total_people * 0.8))
+            
             if not all_girls_data:
                 status_text.text("データが取得できませんでした。"); return pd.DataFrame()
             df = pd.DataFrame(all_girls_data)
