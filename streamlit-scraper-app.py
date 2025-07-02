@@ -250,8 +250,31 @@ def generate_html_report(df, title_text):
         <h1>{title_text}</h1>
         <p>各列のヘッダーでソートできます。画像クリックで次の写真に切り替わります。</p>
         <div id="custom-filters">
-            <span>年齢: <select id="min-age"></select> ～ <select id="max-age"></select></span>
-            <span style="margin-left:10px;">次回出勤: <select id="min-time"></select> ～ <select id="max-time"></select></span>
+            <div class="filter-container">
+                <strong>カスタムフィルター</strong>
+                <div class="filter-row">
+                    <span>
+                        次回出勤: <select id="min-time"></select> ～ <select id="max-time"></select>
+                        <button id="reset-time" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                    </span>
+                    <span>
+                        年齢: <select id="min-age"></select> ～ <select id="max-age"></select>
+                    </span>
+                    <span>
+                        ウェスト: <select id="min-waist"></select> ～ <select id="max-waist"></select>
+                    </span>
+                </div>
+                <div class="filter-row">
+                    <span>
+                        口コミ数: <select id="min-reviews"></select> ～ <select id="max-reviews"></select>
+                        <button id="reset-reviews" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                    </span>
+                    <span>
+                        出勤日: <select id="min-workdays"></select> ～ <select id="max-workdays"></select>
+                        <button id="reset-workdays" type="button" style="margin-left: 5px; cursor: pointer;">リセット</button>
+                    </span>
+                </div>
+            </div>
         </div>
         {html_table}
         <script>
