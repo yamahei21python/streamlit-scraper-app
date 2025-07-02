@@ -261,7 +261,6 @@ def generate_html_report(df, title_text):
             .filter-container > strong {{ display: block; margin-bottom: 8px; }}
             .filter-row {{ display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }}
             .filter-row > span {{ margin-right: 15px; margin-bottom: 5px; }}
-            /* ▼▼▼ 変更点: ボタンにスタイルを追加 ▼▼▼ */
             #custom-filters button {{ margin-left: 5px; cursor: pointer; }}
             .action-buttons {{ padding: 0 0 10px 0; }}
             .action-buttons button {{ padding: 5px 10px; margin-right: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background-color: #f0f0f0;}}
@@ -280,7 +279,7 @@ def generate_html_report(df, title_text):
                         <button id="reset-time" type="button">リセット</button>
                     </span>
                     <span>
-                        年　齢: <select id="min-age"></select> ～ <select id="max-age"></select>
+                        年齢: <select id="min-age"></select> ～ <select id="max-age"></select>
                         <button id="reset-age" type="button">リセット</button>
                     </span>
                     <span>
@@ -356,30 +355,25 @@ def generate_html_report(df, title_text):
             $.fn.dataTable.ext.search.push(
                 function(settings, data, dataIndex) {{
                     const ageColIdx = 3, reviewColIdx = 7, workdayColIdx = 8, timeColIdx = 12, waistColIdx = 14;
-
                     if (isCheckedFilterActive) {{
                         var rowNode = table.row(dataIndex).node();
                         if (!$(rowNode).find('.row-checkbox').is(':checked')) return false;
                     }}
-                    
                     const getVal = (id) => parseInt($(id).val(), 10);
                     const minAge = getVal('#min-age'), maxAge = getVal('#max-age');
                     const minWaist = getVal('#min-waist'), maxWaist = getVal('#max-waist');
                     const minReviews = getVal('#min-reviews'), maxReviews = getVal('#max-reviews');
                     const minWorkdays = getVal('#min-workdays'), maxWorkdays = getVal('#max-workdays');
-                    
                     const cellAge = parseInt(data[ageColIdx]) || 0;
                     const cellWaist = parseInt(data[waistColIdx]) || 0;
                     const cellReviews = parseInt(data[reviewColIdx]) || 0;
                     const cellWorkdays = parseInt(data[workdayColIdx]) || 0;
                     const cellTime = data[timeColIdx] || "";
                     const minTime = $('#min-time').val(), maxTime = $('#max-time').val();
-
                     if ((!isNaN(minAge) && cellAge < minAge) || (!isNaN(maxAge) && cellAge > maxAge)) return false;
                     if ((!isNaN(minWaist) && cellWaist < minWaist) || (!isNaN(maxWaist) && cellWaist > maxWaist)) return false;
                     if ((!isNaN(minReviews) && cellReviews < minReviews) || (!isNaN(maxReviews) && cellReviews > maxReviews)) return false;
                     if ((!isNaN(minWorkdays) && cellWorkdays < minWorkdays) || (!isNaN(maxWorkdays) && cellWorkdays > maxWorkdays)) return false;
-                    
                     if (minTime && maxTime && minTime > maxTime) {{
                         if (cellTime < minTime && cellTime > maxTime) return false;
                     }} else {{
@@ -398,10 +392,27 @@ def generate_html_report(df, title_text):
             setupAgeFilters(); setupTimeFilters(); setupWaistFilters();
             setupReviewFilters(); setupWorkdayFilters();
             
+            // ▼▼▼ 変更点: デフォルト値を設定する関数を追加 ▼▼▼
+            function setDefaultFiltersAndDraw() {{
+                $('#min-age').val('18');
+                $('#max-age').val('29');
+                $('#min-waist').val('48');
+                $('#max-waist').val('60');
+                
+                const now = new Date();
+                const startHour = (now.getHours() - 3 + 24) % 24;
+                const formattedStart = startHour.toString().padStart(2, '0') + ':00';
+                $('#min-time').val(formattedStart);
+                $('#max-time').val('05:00');
+                
+                table.draw(); // フィルターを適用
+            }}
+
+            setDefaultFiltersAndDraw(); // ページ読み込み時にデフォルト値を設定
+
             const allFilters = '#min-age, #max-age, #min-time, #max-time, #min-waist, #max-waist, #min-reviews, #max-reviews, #min-workdays, #max-workdays';
             $(allFilters).on('change', () => table.draw());
 
-            // ▼▼▼ 変更点: 年齢とウェストのリセット処理を追加 ▼▼▼
             $('#reset-time').on('click', () => {{ $('#min-time, #max-time').val(''); table.draw(); }});
             $('#reset-age').on('click', () => {{ $('#min-age, #max-age').val(''); table.draw(); }});
             $('#reset-waist').on('click', () => {{ $('#min-waist, #max-waist').val(''); table.draw(); }});
