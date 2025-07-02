@@ -54,11 +54,22 @@ def parse_sortable_time(text):
     return None
 
 def get_girl_details(profile_url, session, headers):
+    """個人のプロフィールページから詳細情報を取得する。画像取得ロジックを強化。"""
+    # 初期化
     details = {"本日の出勤予定": None, "次回出勤": None, "ギャラリーURL": [], "WEB人気の星": 999, "週合計出勤日数": 0, "週合計勤務時間": 0.0, "口コミ数": 0}
-    if not profile_url: return details
+    if not profile_url:
+        return details
+    
     base_site_url = "https://www.cityheaven.net/"
-    if (girlid_match := re.search(r'girlid-(\d+)', profile_url)) and (shop_url_match := re.search(r'(https?://.*?/girlid-)', profile_url)):
-        girl_id, shop_base_url = girlid_match.group(1), shop_url_match.group(1).replace('girlid-', '')
+
+    # --- 口コミ数の取得 ---
+    # girl_id と shop_base_url は後でも使うのでここで取得
+    girl_id_match = re.search(r'girlid-(\d+)', profile_url)
+    shop_url_match = re.search(r'(https?://.*?/girlid-)', profile_url)
+    
+    if girl_id_match and shop_url_match:
+        girl_id = girl_id_match.group(1)
+        shop_base_url = shop_url_match.group(1).replace('girlid-', '')
         review_url = f"{shop_base_url}reviews/?girlid={girl_id}"
         try:
             review_res = session.get(review_url, timeout=10, headers=headers)
@@ -66,43 +77,86 @@ def get_girl_details(profile_url, session, headers):
                 review_soup = BeautifulSoup(review_res.content, 'html.parser')
                 if (total_div := review_soup.find('div', class_='review-total')) and (count_match := re.search(r'(\d+)件', total_div.get_text())):
                     details["口コミ数"] = int(count_match.group(1))
-        except requests.exceptions.RequestException: pass
+        except requests.exceptions.RequestException:
+            pass # 口コミ数が取得できなくても処理は続行
+
+    # --- プロフィールページの基本情報取得 ---
     try:
         res = session.get(profile_url, timeout=30, headers=headers)
-        if res.status_code != 200: return details
+        if res.status_code != 200:
+            return details
         soup = BeautifulSoup(res.content, 'html.parser')
-        total_work_hours, total_work_days = 0.0, 0
-        if schedule_list := soup.find('ul', id='girl_sukkin'):
-            today_str = datetime.now().strftime("%-m/%-d")
-            for item in schedule_list.find_all('li'):
-                if (date_tag := item.find('dt')) and today_str in date_tag.get_text():
-                    if dd_tag := item.find('dd'): details["本日の出勤予定"] = dd_tag.get_text(separator='-', strip=True)
+    except requests.exceptions.RequestException:
+        return details # ページ自体が取得できなければここで終了
+
+    # スケジュール、次回出勤、人気の星などを解析 (既存ロジック)
+    total_work_hours, total_work_days = 0.0, 0
+    if schedule_list := soup.find('ul', id='girl_sukkin'):
+        today_str = datetime.now().strftime("%-m/%-d")
+        for item in schedule_list.find_all('li'):
+            if (date_tag := item.find('dt')) and today_str in date_tag.get_text():
                 if dd_tag := item.find('dd'):
-                    time_text = dd_tag.get_text(strip=True)
-                    if match := re.search(r'(\d{1,2}:\d{1,2}).*?(\d{1,2}:\d{1,2})', time_text):
-                        total_work_days += 1
-                        try:
-                            start_time, end_time = datetime.strptime(match.group(1), '%H:%M'), datetime.strptime(match.group(2), '%H:%M')
-                            if end_time < start_time: end_time += timedelta(days=1)
-                            total_work_hours += (end_time - start_time).total_seconds() / 3600
-                        except ValueError: continue
-        details["週合計出勤日数"], details["週合計勤務時間"] = total_work_days, total_work_hours
-        if next_time_tag := soup.find('td', class_='shukkin-sugunavitext'):
-            details["次回出勤"] = parse_sortable_time(next_time_tag.get_text(strip=True))
-        if star_img_tag := soup.find('img', class_='yoyaku_girlmark'):
-            if match := re.search(r'yoyaku_(\d+)\.png', star_img_tag.get('src', '')):
-                details["WEB人気の星"] = int(match.group(1))
-        image_urls = []
+                    details["本日の出勤予定"] = dd_tag.get_text(separator='-', strip=True)
+            if dd_tag := item.find('dd'):
+                time_text = dd_tag.get_text(strip=True)
+                if match := re.search(r'(\d{1,2}:\d{1,2}).*?(\d{1,2}:\d{1,2})', time_text):
+                    total_work_days += 1
+                    try:
+                        start_time = datetime.strptime(match.group(1), '%H:%M')
+                        end_time = datetime.strptime(match.group(2), '%H:%M')
+                        if end_time < start_time:
+                            end_time += timedelta(days=1)
+                        total_work_hours += (end_time - start_time).total_seconds() / 3600
+                    except ValueError:
+                        continue
+    details["週合計出勤日数"], details["週合計勤務時間"] = total_work_days, total_work_hours
+
+    if next_time_tag := soup.find('td', class_='shukkin-sugunavitext'):
+        details["次回出勤"] = parse_sortable_time(next_time_tag.get_text(strip=True))
+
+    if star_img_tag := soup.find('img', class_='yoyaku_girlmark'):
+        if match := re.search(r'yoyaku_(\d+)\.png', star_img_tag.get('src', '')):
+            details["WEB人気の星"] = int(match.group(1))
+
+    # ▼▼▼ ここからが新しい画像取得ロジック ▼▼▼
+    profile_image_urls = []
+    # メイン手法: URLを直接推測して取得
+    if girl_id_match and (shop_id_match := re.search(r'/(\d+)/girlid-', profile_url)):
+        girl_id = girl_id_match.group(1)
+        shop_id = shop_id_match.group(1)
+        for i in range(20): # 最大20枚まで試行
+            # サイトのURL構造に合わせたフォーマット
+            image_url = f"https://img2.cityheaven.net/img/girls/tt/{shop_id}/grpb00{girl_id}_{i:010d}pc.jpg"
+            try:
+                response = session.head(image_url, timeout=5)
+                if response.status_code == 200:
+                    profile_image_urls.append(image_url)
+                else:
+                    # 画像が存在しなければループを終了
+                    break
+            except requests.exceptions.RequestException:
+                break # タイムアウトなどが発生した場合も終了
+
+    # 予備手法: 推測で画像が取れなかった場合、HTMLから解析
+    if not profile_image_urls:
         if photo_container := soup.find('div', class_='profile_photo'):
             for img_tag in photo_container.find_all('img'):
                 if src := img_tag.get('src') or img_tag.get('data-src'):
-                    if 'grpb' in src: image_urls.append(urljoin(base_site_url, src))
-        if diary := soup.find('div', id='girlprofile_diary'):
-            for item in diary.find_all('div', class_='thm'):
-                if (img_tag := item.find('img')) and (src := img_tag.get('src')) and 'grdr' in src:
-                    image_urls.append(urljoin(base_site_url, src))
-        details["ギャラリーURL"] = list(dict.fromkeys(image_urls))[:6]
-    except requests.exceptions.RequestException: pass
+                    if 'grpb' in src:
+                        profile_image_urls.append(urljoin(base_site_url, src))
+
+    # 日記画像の取得
+    diary_image_urls = []
+    if diary := soup.find('div', id='girlprofile_diary'):
+        for item in diary.find_all('div', class_='thm'):
+            if (img_tag := item.find('img')) and (src := img_tag.get('src')) and 'grdr' in src:
+                diary_image_urls.append(urljoin(base_site_url, src))
+
+    # 全てのURLを統合し、重複を削除してdetailsに格納
+    all_image_urls = list(dict.fromkeys(profile_image_urls + diary_image_urls))
+    details["ギャラリーURL"] = all_image_urls[:6] # 最大6枚まで
+    # ▲▲▲ 新しい画像取得ロジックはここまで ▲▲▲
+
     return details
 
 def run_scraper(params, progress_bar, status_text):
