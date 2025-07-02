@@ -475,12 +475,12 @@ with st.sidebar:
             if st.checkbox(name):
                 selected_features.append(name)
 
-    st.header("オプション")
     page_limit = st.selectbox(
         "最大取得ページ数",
-        options=['全て', 1, 2, 3, 5, 10, 15, 20],
-        index=3
+        options=['全て', 1, 2, 5, 10, 15, 20, 25, 30, 50, 100],
+        index=4
     )
+    
     hide_inactive = st.checkbox("出勤未定者を表示しない", value=True)
     # ▼▼▼ 変更点: デバッグモードのチェックボックスを削除 ▼▼▼
     # debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
