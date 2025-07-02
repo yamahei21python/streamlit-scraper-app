@@ -4,15 +4,14 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import pandas as pd
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import re
 import time
 from datetime import datetime, timedelta
 import concurrent.futures
 import json
-import io
 
-# --- データ定義 (変更なし) ---
+# --- データ定義 ---
 PREFECTURES = {'東京': 'tokyo', '大阪': 'osaka', '香川': 'kagawa', '北海道': 'hokkaido', '青森': 'aomori', '岩手': 'iwate', '宮城': 'miyagi', '秋田': 'akita', '山形': 'yamagata', '福島': 'fukushima', '茨城': 'ibaraki', '栃木': 'tochigi', '群馬': 'gunma', '埼玉': 'saitama', '千葉': 'chiba', '神奈川': 'kanagawa', '新潟': 'niigata', '富山': 'toyama', '石川': 'ishikawa', '福井': 'fui', '山梨': 'yamanashi', '長野': 'nagano', '岐阜': 'gifu', '静岡': 'shizuoka', '愛知': 'aichi', '三重': 'mie', '滋賀': 'shiga', '京都': 'kyoto', '兵庫': 'hyogo', '奈良': 'nara', '和歌山': 'wakayama', '鳥取': 'tottori', '島根': 'shimane', '岡山': 'okayama', '広島': 'hiroshima', '山口': 'yamaguchi', '徳島': 'tokushima', '愛媛': 'ehime', '高知': 'kochi', '福岡': 'fukuoka', '佐賀': 'saga', '長崎': 'nagasaki', '熊本': 'kumamoto', '大分': 'oita', '宮崎': 'miyazaki', '鹿児島': 'kagoshima', '沖縄': 'okinawa'}
 AGE_MAP = {'18～19歳': 'typ101', '20～24歳': 'typ102', '25～29歳': 'typ103'}
 HEIGHT_MAP = {'149cm以下': 'typ201', '150～154cm': 'typ202', '155～159cm': 'typ203', '160～164cm': 'typ204'}
@@ -21,7 +20,7 @@ FEATURE_MAP = {'ニューフェイス': 'typ601', 'お店NO.1・2・3': 'typ602'
 ALL_TYPS = {**AGE_MAP, **HEIGHT_MAP, **BUST_MAP, **FEATURE_MAP}
 
 
-# --- ヘルパー関数群 (変更なし) ---
+# --- ヘルパー関数群 ---
 def create_gallery_html(image_urls):
     if not isinstance(image_urls, list) or not image_urls: return ''
     image_paths_json = json.dumps(image_urls)
@@ -54,16 +53,21 @@ def parse_sortable_time(text):
     return None
 
 def get_girl_details(profile_url, session, headers):
-    """個人のプロフィールページから詳細情報を取得する。画像取得ロジックを強化。"""
-    # 初期化
+    """個人のプロフィールページから詳細情報を取得する。画像取得ロジックを改良。"""
     details = {"本日の出勤予定": None, "次回出勤": None, "ギャラリーURL": [], "WEB人気の星": 999, "週合計出勤日数": 0, "週合計勤務時間": 0.0, "口コミ数": 0}
     if not profile_url:
         return details
     
     base_site_url = "https://www.cityheaven.net/"
 
-    # --- 口コミ数の取得 ---
-    # girl_id と shop_base_url は後でも使うのでここで取得
+    try:
+        res = session.get(profile_url, timeout=30, headers=headers)
+        if res.status_code != 200:
+            return details
+        soup = BeautifulSoup(res.content, 'html.parser')
+    except requests.exceptions.RequestException:
+        return details
+
     girl_id_match = re.search(r'girlid-(\d+)', profile_url)
     shop_url_match = re.search(r'(https?://.*?/girlid-)', profile_url)
     
@@ -78,18 +82,8 @@ def get_girl_details(profile_url, session, headers):
                 if (total_div := review_soup.find('div', class_='review-total')) and (count_match := re.search(r'(\d+)件', total_div.get_text())):
                     details["口コミ数"] = int(count_match.group(1))
         except requests.exceptions.RequestException:
-            pass # 口コミ数が取得できなくても処理は続行
+            pass
 
-    # --- プロフィールページの基本情報取得 ---
-    try:
-        res = session.get(profile_url, timeout=30, headers=headers)
-        if res.status_code != 200:
-            return details
-        soup = BeautifulSoup(res.content, 'html.parser')
-    except requests.exceptions.RequestException:
-        return details # ページ自体が取得できなければここで終了
-
-    # スケジュール、次回出勤、人気の星などを解析 (既存ロジック)
     total_work_hours, total_work_days = 0.0, 0
     if schedule_list := soup.find('ul', id='girl_sukkin'):
         today_str = datetime.now().strftime("%-m/%-d")
@@ -118,46 +112,25 @@ def get_girl_details(profile_url, session, headers):
         if match := re.search(r'yoyaku_(\d+)\.png', star_img_tag.get('src', '')):
             details["WEB人気の星"] = int(match.group(1))
 
-    # ▼▼▼ ここからが新しい画像取得ロジック ▼▼▼
     profile_image_urls = []
-    # メイン手法: URLを直接推測して取得
-    if girl_id_match and (shop_id_match := re.search(r'/(\d+)/girlid-', profile_url)):
-        girl_id = girl_id_match.group(1)
-        shop_id = shop_id_match.group(1)
-        for i in range(50): # 最大50枚まで試行
-            # サイトのURL構造に合わせたフォーマット
-            image_url = f"https://img2.cityheaven.net/img/girls/tt/{shop_id}/grpb00{girl_id}_{i:010d}pc.jpg"
-            try:
-                response = session.head(image_url, timeout=5)
-                if response.status_code == 200:
-                    profile_image_urls.append(image_url)
-                else:
-                    # 画像が存在しなければループを終了
-                    break
-            except requests.exceptions.RequestException:
-                break # タイムアウトなどが発生した場合も終了
-
-    # 予備手法: 推測で画像が取れなかった場合、HTMLから解析
-    if not profile_image_urls:
-        if photo_container := soup.find('div', class_='profile_photo'):
-            for img_tag in photo_container.find_all('img'):
-                if src := img_tag.get('src') or img_tag.get('data-src'):
-                    if 'grpb' in src:
-                        profile_image_urls.append(urljoin(base_site_url, src))
-
-    # 日記画像の取得
+    if slider := soup.find('ul', id='slider'):
+        for item in slider.find_all('li'):
+            if thumb_url := item.get('data-thumb'):
+                full_url = "https:" + thumb_url
+                clean_url = full_url.split('?')[0]
+                profile_image_urls.append(clean_url)
+    
     diary_image_urls = []
     if diary := soup.find('div', id='girlprofile_diary'):
         for item in diary.find_all('div', class_='thm'):
-            if (img_tag := item.find('img')) and (src := img_tag.get('src')) and 'grdr' in src:
+            if (img_tag := item.find('img')) and (src := img_tag.get('src')):
                 diary_image_urls.append(urljoin(base_site_url, src))
 
-    # 全てのURLを統合し、重複を削除してdetailsに格納
     all_image_urls = list(dict.fromkeys(profile_image_urls + diary_image_urls))
-    details["ギャラリーURL"] = all_image_urls[:6] # 最大6枚まで
-    # ▲▲▲ 新しい画像取得ロジックはここまで ▲▲▲
+    details["ギャラリーURL"] = all_image_urls[:6]
 
     return details
+
 
 def run_scraper(params, progress_bar, status_text):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'}
@@ -217,53 +190,12 @@ def run_scraper(params, progress_bar, status_text):
         except Exception as e:
             st.error(f"エラーが発生しました: {e}"); return pd.DataFrame()
 
-# ★★★ f-stringの問題を修正したHTML生成関数 ★★★
-def generate_html_report(df, title_text):
-    if df.empty: return "<h1>データがありません</h1>"
-    df_display = df.copy()
-
-    # (...中略... データ変換のコードは変更なし)
-    df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer;">'
-    df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
-    df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
-    df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
-    num_cols = ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数', '週合計勤務時間']
-    for col in num_cols:
-        if col in df_display.columns:
-            df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else ("{:.1f}".format(x) if pd.notna(x) and x > 0 else ""))
-    df_display.fillna("", inplace=True)
-    rename_map = {"身長(cm)": "身長", "バスト(cm)": "バスト", "ウェスト(cm)": "ウェスト", "ヒップ(cm)": "ヒップ", "週合計出勤日数": "出勤日", "週合計勤務時間": "勤務時間", "店舗名": "店舗"}
-    df_display.rename(columns=rename_map, inplace=True)
-    desired_order = ["チェック", "名前", "ギャラリー", "年齢", "身長", "カップ", "WEB人気", "口コミ数", "出勤日", "勤務時間", "出勤状況", "本日の出勤予定", "次回出勤", "バスト", "ウェスト", "ヒップ", "店舗"]
-    existing_columns = [col for col in desired_order if col in df_display.columns]
-    df_display = df_display.reindex(columns=existing_columns)
-    html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
-
-def generate_html_report(df, title_text):
-    if df.empty: return "<h1>データがありません</h1>"
-    df_display = df.copy()
-    df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer;">'
-    df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
-    df_display['ギャラリー'] = df_display['ギャラリーURL'].apply(create_gallery_html)
-    df_display['WEB人気'] = df_display['WEB人気の星'].apply(create_star_rating_html)
-    num_cols = ['年齢', '身長(cm)', 'バスト(cm)', 'ウェスト(cm)', 'ヒップ(cm)', '口コミ数', '週合計出勤日数', '週合計勤務時間']
-    for col in num_cols:
-        if col in df_display.columns:
-            df_display[col] = df_display[col].apply(lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else ("{:.1f}".format(x) if pd.notna(x) and x > 0 else ""))
-    df_display.fillna("", inplace=True)
-    rename_map = {"身長(cm)": "身長", "バスト(cm)": "バスト", "ウェスト(cm)": "ウェスト", "ヒップ(cm)": "ヒップ", "週合計出勤日数": "出勤日", "週合計勤務時間": "勤務時間", "店舗名": "店舗"}
-    df_display.rename(columns=rename_map, inplace=True)
-    desired_order = ["チェック", "名前", "ギャラリー", "年齢", "身長", "カップ", "WEB人気", "口コミ数", "出勤日", "勤務時間", "出勤状況", "本日の出勤予定", "次回出勤", "バスト", "ウェスト", "ヒップ", "店舗"]
-    existing_columns = [col for col in desired_order if col in df_display.columns]
-    df_display = df_display.reindex(columns=existing_columns)
-    html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
 def generate_html_report(df, title_text):
     """ データフレームから高機能なHTMLレポートを生成する """
     if df.empty:
         return "<h1>データがありません</h1>"
 
-    # --- データ変換 --- (この部分は変更ありません)
     df_display = df.copy()
     df_display['チェック'] = '<input type="checkbox" class="row-checkbox" style="cursor:pointer; transform: scale(1.5);">'
     df_display['名前'] = df_display.apply(lambda row: f'<a href="{row["プロフィールリンク"]}" target="_blank">{row["名前"]}</a>' if pd.notna(row['プロフィールリンク']) else row['名前'], axis=1)
@@ -281,7 +213,6 @@ def generate_html_report(df, title_text):
     df_display = df_display[existing_columns]
     html_table = df_display.to_html(escape=False, index=False, table_id='resultsTable', classes='display compact stripe hover')
 
-    # --- HTMLテンプレート本体 (JavaScript/HTMLの欠落を修正) ---
     html_template = f"""
     <html>
     <head>
@@ -348,7 +279,6 @@ def generate_html_report(df, title_text):
         {html_table}
 
         <script>
-        // ▼▼▼ 修正: 欠落していたJavaScript関数を全て復元 ▼▼▼
         function nextImage(container) {{
             if (!container.dataset.images) return;
             const images = JSON.parse(container.dataset.images);
@@ -432,13 +362,11 @@ def generate_html_report(df, title_text):
 
             $.fn.dataTable.ext.search.push(
                 function(settings, data, dataIndex) {{
-                    // チェックボックスフィルターのロジック
                     if (isCheckedFilterActive) {{
                         var rowNode = table.row(dataIndex).node();
                         if (!$(rowNode).find('.row-checkbox').is(':checked')) return false;
                     }}
                     
-                    // カスタムフィルターのロジック
                     const ageColIdx = 3, reviewColIdx = 7, workdayColIdx = 8, timeColIdx = 12, waistColIdx = 14;
                     const getVal = (id) => parseInt($(id).val(), 10);
                     const minAge = getVal('#min-age'), maxAge = getVal('#max-age');
@@ -518,7 +446,6 @@ with st.sidebar:
     st.header("検索条件")
     prefecture_name = st.selectbox("都道府県", options=list(PREFECTURES.keys()), index=0)
     
-    # ★★★ ここのコードを修正しました ★★★
     with st.expander("特徴で絞り込み"):
         selected_features = []
         
@@ -542,15 +469,15 @@ with st.sidebar:
             if st.checkbox(name):
                 selected_features.append(name)
 
+    st.header("オプション")
     page_limit = st.selectbox(
         "最大取得ページ数",
-        options=['全て', 1, 2, 5, 10, 15, 20, 25, 30, 50, 100],
-        index=4
+        options=['全て', 1, 2, 3, 5, 10, 15, 20],
+        index=3
     )
-
-    hide_inactive = st.checkbox("現在出勤者のみを表示", value=True)
-    start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
+    hide_inactive = st.checkbox("出勤未定者を表示しない", value=True)
     debug_mode = st.checkbox("デバッグモード (1ページのみ取得)")
+    start_button = st.button("スクレイピング開始", type="primary", disabled=st.session_state.is_running)
 
 if start_button:
     st.session_state.is_running = True
@@ -567,12 +494,8 @@ if start_button:
 if st.session_state.result_df is not None:
     st.header("スクレイピング結果")
     if not st.session_state.result_df.empty:
-        tab1, tab2 = st.tabs(["📊 高機能HTMLレポート", "📈 シンプルな表"])
-        with tab1:
-            title = f"{prefecture_name} / {'・'.join(selected_features) if selected_features else '特徴指定なし'}"
-            html_report = generate_html_report(st.session_state.result_df, title)
-            st.components.v1.html(html_report, height=800, scrolling=True)
-        with tab2:
-            st.dataframe(st.session_state.result_df, column_config={"ギャラリーURL": st.column_config.ImageColumn("Photo"), "プロフィールリンク": st.column_config.LinkColumn("Profile Link")}, use_container_width=True)
+        title_text = f"{prefecture_name} / {'・'.join(selected_features) if selected_features else '特徴指定なし'}"
+        html_report = generate_html_report(st.session_state.result_df, title_text)
+        st.components.v1.html(html_report, height=800, scrolling=True)
     else:
         st.warning("条件に合うデータが見つかりませんでした。")
